@@ -2,7 +2,7 @@ package tensorknower69-streaming
 version = 1.0.0
 authors = "tensorknower69"
 -- maintainers =
-license = MIT
+license = "MIT"
 -- brief =
 -- readme =
 -- homepage =
