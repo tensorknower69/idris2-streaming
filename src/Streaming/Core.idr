@@ -114,7 +114,7 @@ cons x stream = Step (x :> stream)
 
 export
 next : Monad m => Stream (Of a) m r -> m (Either r (a, Stream (Of a) m r))
-next stream = inspect stream >>= \case
+next stream = case !(inspect stream) of
   Left r => pure (Left r)
   Right (x :> xs) => pure (Right (x, xs))
 
@@ -135,5 +135,9 @@ mapsM : Monad m => (a -> m b) -> Stream (Of a) m r -> Stream (Of b) m r
 mapsM f s = mapfM (\(c :> g) => (:> g) <$> f c) s
 
 export
-fors : Monad m => (a -> m x) -> Stream (Of a) m r -> m r
-fors f = fold pure join (\(x :> act) => ignore (f x) >> act)
+traverse : (Monad m, Functor f) => (a -> Stream f m ()) -> Stream (Of a) m r -> Stream f m r
+traverse f = fold pure effect (\(x :> xs) => f x >> xs)
+
+export
+for : (Monad m, Functor f) => Stream (Of a) m r -> (a -> Stream f m ()) -> Stream f m r
+for = flip traverse
