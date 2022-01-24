@@ -1,6 +1,11 @@
 module Streaming.Core
 
+import Control.Monad.Error.Interface
+import Control.Monad.RWS.Interface
+import Control.Monad.Reader.Interface
+import Control.Monad.State.Interface
 import Control.Monad.Trans
+import Control.Monad.Writer.Interface
 import Data.Functor.Of
 import Data.List
 import Data.Nat
@@ -14,12 +19,12 @@ data Stream : (f : Type -> Type) -> (m : Type -> Type) -> (r : Type) -> Type whe
   Build : (forall b. (r -> b) -> (m b -> b) -> (f b -> b) -> b) -> Stream f m r
 
 ||| Wrap a new layer of a `Stream`
-export
+public export
 wrap : f (Stream f m r) -> Stream f m r
 wrap x = Step x
 
 ||| Wrap a new effect layer of a `Stream`
-export
+public export
 effect : m (Stream f m r) -> Stream f m r
 effect x = Effect x
 
@@ -39,7 +44,7 @@ destroy : (Functor f, Monad m) => (f a -> a) -> (m a -> a) -> (r -> a) -> Stream
 destroy step effect return = fold return effect step
 
 ||| Unfold a `Stream`
-public export
+export
 unfold : (Functor f, Monad m) => (a -> m (Either r (f a))) -> a -> Stream f m r
 unfold f a = Effect $ do
   Right a' <- f a
@@ -50,12 +55,16 @@ export
 inspect : (Functor f, Monad m) => Stream f m r -> m (Either r (f (Stream f m r)))
 inspect = destroy (pure . (Right . map (effect {f} {m} . map (either Return wrap)))) join (pure . Left)
 
-public export
+export
+hoist : (Functor f, Monad m) => (forall a. m a -> n a) -> Stream f m r -> Stream f n r
+hoist f = fold Return (\x => Effect $ f x) (\x => Step x)
+
+export
 (Functor f, Monad m) => Functor (Stream f m) where
   map f x = Build (\return, effect, step => fold (return . f) effect step x)
 
 mutual
-  public export
+  export
   (Functor f, Monad m) => Applicative (Stream f m) where
     pure = Return
     x <*> y = do
@@ -63,17 +72,33 @@ mutual
       v <- y
       pure (f v)
 
-  public export
+  export
     (Functor f, Monad m) => Monad (Stream f m) where
       x >>= k = assert_total Build (\return, effect, step => fold (fold return effect step . k) effect step x)
 
-public export
+export
 MonadTrans (Stream f) where
   lift x = Effect (map Return x)
 
-public export
+export
 (HasIO m, Monad (Stream f m)) => HasIO (Stream f m) where
   liftIO x = lift (liftIO x)
+
+export
+(Functor f, MonadState s m) => MonadState s (Stream f m) where
+  get = lift get
+  put = lift . put
+  state f = lift (state f)
+
+export
+(Functor f, MonadReader s m) => MonadReader s (Stream f m) where
+  ask = lift ask
+  local f = hoist (local f)
+
+export
+(Functor f, MonadError e m) => MonadError e (Stream f m) where
+  throwError = lift . throwError
+  stream `catchError` f = fold pure (\x => Effect x `catchError` f) (\x => Step x) stream
 
 export
 yield : Monad m => a -> Stream (Of a) m ()
@@ -87,28 +112,28 @@ run (Step x) = x >>= run
 run (Build g) = run (build g)
 
 ||| Turns a `Stream` into a list
-public export
+export
 toList : Monad m => Stream (Of a) m r -> m (List a, r)
 toList = destroy (\(a :> b) => map (mapFst (a ::)) b) join (\x => pure (Nil, x))
 
 ||| `toList` but discards the result
-public export
+export
 toList_ : Monad m => Stream (Of a) m r -> m (List a)
 toList_ = destroy (\(a :> b) => map (a ::) b) join (const (pure Nil))
 
 ||| Construct a `Stream` from a `List` with a result type
-public export
+export
 fromList : r -> List a -> Stream (Of a) m r
 fromList r Nil = Return r
 fromList r (a :: as) = Step (a :> fromList r as)
 
 ||| `fromList` but discards the result
-public export
+export
 fromList_ : List a -> Stream (Of a) m ()
 fromList_ = fromList ()
 
 ||| Concatenate an element into a `Stream`
-public export
+export
 cons : a -> Stream (Of a) m r -> Stream (Of a) m r
 cons x stream = Step (x :> stream)
 
