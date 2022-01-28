@@ -3,8 +3,10 @@ module Data.Functor.Of
 infixl 0 :>
 
 public export
-data Of : (a : Type) -> (b : Type) -> Type where
-  (:>) : a -> Lazy b -> Of a b
+record Of a b where
+  constructor (:>)
+  fst : a
+  snd : Lazy b
 
 export
 Bifunctor Of where
@@ -15,3 +17,11 @@ Bifunctor Of where
 export
 Functor (Of a) where
   map = mapSnd
+
+export
+from_pair : Pair a b -> Of a b
+from_pair (a, b) = a :> b
+
+export
+to_pair : Of a b -> Pair a b
+to_pair (a :> b) = (a, b)
