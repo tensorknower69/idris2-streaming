@@ -196,3 +196,29 @@ for = flip traverse
 export
 mapM_ : Monad m => (a -> m b) -> Stream (Of a) m r -> m r
 mapM_ f = fold pure join (\(x :> xs) => ignore (f x) >> xs)
+
+export
+scan : Functor m => (acc -> a -> acc) -> (acc -> b) -> acc -> Stream (Of a) m r -> Stream (Of b) m r
+scan step done begin stream = Step (done begin :> loop begin stream)
+  where
+  loop : acc -> Stream (Of a) m r -> Stream (Of b) m r
+  loop acc (Step (x :> xs)) = let acc = step acc x in Step (done acc :> loop acc xs)
+  loop acc (Return r) = Return r
+  loop acc (Effect m) = Effect (map (loop acc) m)
+  loop acc (Build g) = loop acc (g Return effect wrap)
+
+export
+scanM : Monad m => (acc -> a -> m acc) -> (acc -> m b) -> m acc -> Stream (Of a) m r -> Stream (Of b) m r
+scanM step done begin stream = Effect $ do
+  begin <- begin
+  x0 <- done begin
+  pure $ Step (x0 :> loop begin stream)
+  where
+  loop : acc -> Stream (Of a) m r -> Stream (Of b) m r
+  loop acc (Step (x :> xs)) = Effect $ do
+    acc <- step acc x
+    xn <- done acc
+    pure $ Step (xn :> loop acc xs)
+  loop acc (Return r) = Return r
+  loop acc (Effect m) = Effect $ m >>= pure . loop acc
+  loop acc (Build g) = loop acc (g pure effect wrap)
