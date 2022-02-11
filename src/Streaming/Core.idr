@@ -6,6 +6,7 @@ import Control.Monad.Reader.Interface
 import Control.Monad.State.Interface
 import Control.Monad.Trans
 import Control.Monad.Writer.Interface
+import Control.Monad.Morph
 import Data.Functor.Of
 import Data.List
 import Data.Nat
@@ -60,8 +61,8 @@ inspect : (Functor f, Monad m) => Stream f m r -> m (Either r (f (Stream f m r))
 inspect = destroy (pure . (Right . map (effect {f} {m} . map (either Return wrap)))) join (pure . Left)
 
 export
-hoist : (Functor f, Monad m) => (forall a. m a -> n a) -> Stream f m r -> Stream f n r
-hoist f = fold Return (\x => Effect $ f x) (\x => Step x)
+Functor f => MFunctor (Stream f) where
+  hoist f = fold Return (\x => Effect $ f x) (\x => Step x)
 
 export
 (Functor f, Monad m) => Functor (Stream f m) where

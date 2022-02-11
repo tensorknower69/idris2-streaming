@@ -10,7 +10,7 @@ license = "MIT"
 -- bugtracker =
 
 -- packages to add to search path
--- depends =
+depends = tensorknower69-mmorph
 
 -- modules to install
 modules
