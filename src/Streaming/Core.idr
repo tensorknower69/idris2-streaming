@@ -10,6 +10,8 @@ import Data.Functor.Of
 import Data.List
 import Data.Nat
 
+%default total
+
 ||| based on: https://github.com/MarcelineVQ/idris2-streaming/blob/master/src/Streaming/Internal.idr
 public export
 data Stream : (f : Type -> Type) -> (m : Type -> Type) -> (r : Type) -> Type where
@@ -36,8 +38,8 @@ build = \phi => phi Return (\x => Effect x) (\x => Step x)
 export
 fold : (Functor f, Monad m) => (r -> b) -> (m b -> b) -> (f b -> b) -> Stream f m r -> b
 fold return effect step (Return x) = return x
-fold return effect step (Effect x) = effect (fold return effect step <$> x)
-fold return effect step (Step x) = step (fold return effect step <$> x)
+fold return effect step (Effect x) = effect (assert_total fold return effect step <$> x)
+fold return effect step (Step x) = step (assert_total fold return effect step <$> x)
 fold return effect step (Build g) = g return effect step
 
 ||| `fold` but the argument positions are different
@@ -51,7 +53,7 @@ unfold : (Functor f, Monad m) => (a -> m (Either r (f a))) -> a -> Stream f m r
 unfold f a = Effect $ do
   Right a' <- f a
   | Left r => pure (Return r)
-  pure (Step (unfold f <$> a'))
+  pure (Step (assert_total unfold f <$> a'))
 
 export
 inspect : (Functor f, Monad m) => Stream f m r -> m (Either r (f (Stream f m r)))
@@ -70,13 +72,11 @@ mutual
   (Functor f, Monad m) => Applicative (Stream f m) where
     pure = Return
     x <*> y = do
-      f <- x
-      v <- y
-      pure (f v)
+      assert_total (>>=) x $ \x => y >>= \y => pure (x y)
 
   export
     (Functor f, Monad m) => Monad (Stream f m) where
-      x >>= k = assert_total Build (\return, effect, step => fold (fold return effect step . k) effect step x)
+      x >>= k = Build (\return, effect, step => fold (fold return effect step . k) effect step x)
 
 export
 MonadTrans (Stream f) where
@@ -100,7 +100,7 @@ export
 export
 (Functor f, MonadError e m) => MonadError e (Stream f m) where
   throwError = lift . throwError
-  stream `catchError` f = fold pure (\x => Effect x `catchError` f) (\x => Step x) stream
+  stream `catchError` f = fold pure (\x => assert_total catchError (Effect x) f) wrap stream
 
 ||| analogous to `Prelude.unfoldr` but for `Stream (Of a)`
 export
@@ -126,9 +126,9 @@ yield x = Step (x :> Return ())
 export
 run : Monad m => Stream m m r -> m r
 run (Return x) = pure x
-run (Effect x) = x >>= run
-run (Step x) = x >>= run
-run (Build g) = run (build g)
+run (Effect x) = x >>= assert_total run
+run (Step x) = x >>= assert_total run
+run (Build g) = assert_total run (build g)
 
 ||| turns a `Stream` into a list
 export
@@ -204,7 +204,7 @@ scan step done begin stream = Step (done begin :> loop begin stream)
   loop : acc -> Stream (Of a) m r -> Stream (Of b) m r
   loop acc (Step (x :> xs)) = let acc = step acc x in Step (done acc :> loop acc xs)
   loop acc (Return r) = Return r
-  loop acc (Effect m) = Effect (map (loop acc) m)
+  loop acc (Effect m) = Effect (map (assert_total loop acc) m)
   loop acc (Build g) = loop acc (g Return effect wrap)
 
 export
@@ -218,7 +218,7 @@ scanM step done begin stream = Effect $ do
   loop acc (Step (x :> xs)) = Effect $ do
     acc <- step acc x
     xn <- done acc
-    pure $ Step (xn :> loop acc xs)
+    pure $ Step (xn :> assert_total loop acc xs)
   loop acc (Return r) = Return r
-  loop acc (Effect m) = Effect $ m >>= pure . loop acc
+  loop acc (Effect m) = Effect $ m >>= pure . assert_total loop acc
   loop acc (Build g) = loop acc (g pure effect wrap)
